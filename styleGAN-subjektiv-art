@@ -1,0 +1,837 @@
+{
+  "nbformat": 4,
+  "nbformat_minor": 0,
+  "metadata": {
+    "accelerator": "GPU",
+    "colab": {
+      "name": "Copia de stylegan2 multi pkl.ipynb",
+      "provenance": [],
+      "collapsed_sections": [],
+      "include_colab_link": true
+    },
+    "kernelspec": {
+      "display_name": "Python 3",
+      "name": "python3"
+    }
+  },
+  "cells": [
+    {
+      "cell_type": "markdown",
+      "metadata": {
+        "id": "view-in-github",
+        "colab_type": "text"
+      },
+      "source": [
+        "<a href=\"https://colab.research.google.com/github/subjekt-iv/StyleGAN2-ModernArt/blob/main/styleGAN-subjektiv-art\" target=\"_parent\"><img src=\"https://colab.research.google.com/assets/colab-badge.svg\" alt=\"Open In Colab\"/></a>"
+      ]
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "!nvidia-smi\n"
+      ],
+      "metadata": {
+        "colab": {
+          "base_uri": "https://localhost:8080/"
+        },
+        "id": "BnJRAD6kbMFW",
+        "outputId": "5385094e-e9c1-4b7c-d156-0307526cf100"
+      },
+      "execution_count": 1,
+      "outputs": [
+        {
+          "output_type": "stream",
+          "name": "stdout",
+          "text": [
+            "Tue May 17 00:31:18 2022       \n",
+            "+-----------------------------------------------------------------------------+\n",
+            "| NVIDIA-SMI 460.32.03    Driver Version: 460.32.03    CUDA Version: 11.2     |\n",
+            "|-------------------------------+----------------------+----------------------+\n",
+            "| GPU  Name        Persistence-M| Bus-Id        Disp.A | Volatile Uncorr. ECC |\n",
+            "| Fan  Temp  Perf  Pwr:Usage/Cap|         Memory-Usage | GPU-Util  Compute M. |\n",
+            "|                               |                      |               MIG M. |\n",
+            "|===============================+======================+======================|\n",
+            "|   0  Tesla K80           Off  | 00000000:00:04.0 Off |                    0 |\n",
+            "| N/A   38C    P8    27W / 149W |      0MiB / 11441MiB |      0%      Default |\n",
+            "|                               |                      |                  N/A |\n",
+            "+-------------------------------+----------------------+----------------------+\n",
+            "                                                                               \n",
+            "+-----------------------------------------------------------------------------+\n",
+            "| Processes:                                                                  |\n",
+            "|  GPU   GI   CI        PID   Type   Process name                  GPU Memory |\n",
+            "|        ID   ID                                                   Usage      |\n",
+            "|=============================================================================|\n",
+            "|  No running processes found                                                 |\n",
+            "+-----------------------------------------------------------------------------+\n"
+          ]
+        }
+      ]
+    },
+    {
+      "cell_type": "code",
+      "metadata": {
+        "colab": {
+          "base_uri": "https://localhost:8080/"
+        },
+        "id": "UMdpKY1XODz2",
+        "outputId": "dc6af4fb-e8d9-4d4f-ac21-ca9899eac0d9"
+      },
+      "source": [
+        "%tensorflow_version 1.x\n",
+        "\n",
+        "!git clone https://github.com/dvschultz/stylegan2\n",
+        "!pip install opensimplex # needed for noise interpolation\n",
+        "%cd stylegan2\n",
+        "%mkdir datasets"
+      ],
+      "execution_count": 2,
+      "outputs": [
+        {
+          "output_type": "stream",
+          "name": "stdout",
+          "text": [
+            "TensorFlow 1.x selected.\n",
+            "Cloning into 'stylegan2'...\n",
+            "remote: Enumerating objects: 552, done.\u001b[K\n",
+            "remote: Total 552 (delta 0), reused 0 (delta 0), pack-reused 552\u001b[K\n",
+            "Receiving objects: 100% (552/552), 22.47 MiB | 25.04 MiB/s, done.\n",
+            "Resolving deltas: 100% (285/285), done.\n",
+            "Collecting opensimplex\n",
+            "  Downloading opensimplex-0.4.2-py3-none-any.whl (17 kB)\n",
+            "Requirement already satisfied: numpy>=1.20 in /usr/local/lib/python3.7/dist-packages (from opensimplex) (1.21.6)\n",
+            "Installing collected packages: opensimplex\n",
+            "Successfully installed opensimplex-0.4.2\n",
+            "/content/stylegan2\n"
+          ]
+        }
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {
+        "id": "i1pIBZGzZxSA"
+      },
+      "source": [
+        "#Converting your dataset\n",
+        "StyleGAN requires you to convert your standard jpg or png images into a new format (.tfrecords). I recommend doing this on your server because the files become quite large and will be slow to upload over FTP.\n",
+        "\n",
+        "After the `create_from_images` argument you need to pass in two paths. The first path is where the .tfrecords files should be output (just edit the last part to have a unique name). The second path is to the directory of your images.\n",
+        "\n",
+        "\n"
+      ]
+    },
+    {
+      "cell_type": "code",
+      "metadata": {
+        "colab": {
+          "base_uri": "https://localhost:8080/"
+        },
+        "id": "Ixjcx2-cbTDm",
+        "outputId": "d08fd5ac-6339-48fb-95e6-36b8b93fbce4"
+      },
+      "source": [
+        "!python dataset_tool.py create_from_images ./datasets/my-custom-dataset ./my-custom-images"
+      ],
+      "execution_count": 3,
+      "outputs": [
+        {
+          "output_type": "stream",
+          "name": "stdout",
+          "text": [
+            "Loading images from \"./my-custom-images\"\n",
+            "Error: No input images found\n"
+          ]
+        }
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {
+        "id": "F9vCDt9LRtXl"
+      },
+      "source": [
+        "#Test the model\n",
+        "The following command will generate 55 sample images from the model.\n",
+        "\n",
+        "##Options\n",
+        "`--network`\n",
+        "\n",
+        "Make sure the `--network` argument points to your .pkl file. (My preferred method is to right click on the file in the Files pane to your left and choose `Copy Path`, then paste that into the argument after the `=` sign).\n",
+        "\n",
+        "`--seeds`\n",
+        "\n",
+        "This allows you to choose random seeds from the model. Remember that our input to StyleGAN is a 512-dimensional array. These seeds will generate those 512 values. Each seed will generate a different, random array. The same seed value will also always generate the same random array, so we can later use it for other purposes like interpolation.\n",
+        "\n",
+        "`--truncation-psi`\n",
+        "\n",
+        "Truncation is a special argument of StyleGAN. Essentially values that are closer to 0 will be more real than numbers further away from 0. I generally recommend a value between `0.5` and `1.0`. `0.5` will give you pretty \"realistic\" results, while `1.0` is likely to give you \"weirder\" results."
+      ]
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "!pip install -U --no-cache-dir gdown --pre\n"
+      ],
+      "metadata": {
+        "colab": {
+          "base_uri": "https://localhost:8080/"
+        },
+        "id": "gkBhXidPkubg",
+        "outputId": "b91a88d8-1e2c-4038-c2d9-0929c978ef2d"
+      },
+      "execution_count": 4,
+      "outputs": [
+        {
+          "output_type": "stream",
+          "name": "stdout",
+          "text": [
+            "Requirement already satisfied: gdown in /usr/local/lib/python3.7/dist-packages (4.4.0)\n",
+            "Requirement already satisfied: filelock in /usr/local/lib/python3.7/dist-packages (from gdown) (3.6.0)\n",
+            "Requirement already satisfied: six in /usr/local/lib/python3.7/dist-packages (from gdown) (1.15.0)\n",
+            "Requirement already satisfied: tqdm in /usr/local/lib/python3.7/dist-packages (from gdown) (4.64.0)\n",
+            "Requirement already satisfied: beautifulsoup4 in /usr/local/lib/python3.7/dist-packages (from gdown) (4.6.3)\n",
+            "Requirement already satisfied: requests[socks] in /usr/local/lib/python3.7/dist-packages (from gdown) (2.23.0)\n",
+            "Requirement already satisfied: certifi>=2017.4.17 in /usr/local/lib/python3.7/dist-packages (from requests[socks]->gdown) (2021.10.8)\n",
+            "Requirement already satisfied: idna<3,>=2.5 in /usr/local/lib/python3.7/dist-packages (from requests[socks]->gdown) (2.10)\n",
+            "Requirement already satisfied: chardet<4,>=3.0.2 in /usr/local/lib/python3.7/dist-packages (from requests[socks]->gdown) (3.0.4)\n",
+            "Requirement already satisfied: urllib3!=1.25.0,!=1.25.1,<1.26,>=1.21.1 in /usr/local/lib/python3.7/dist-packages (from requests[socks]->gdown) (1.24.3)\n",
+            "Requirement already satisfied: PySocks!=1.5.7,>=1.5.6 in /usr/local/lib/python3.7/dist-packages (from requests[socks]->gdown) (1.7.1)\n"
+          ]
+        }
+      ]
+    },
+    {
+      "cell_type": "code",
+      "metadata": {
+        "colab": {
+          "base_uri": "https://localhost:8080/"
+        },
+        "id": "iHhNRL843T_w",
+        "outputId": "3a870c28-1178-4b2f-9ec3-bdb3f85ab0c6"
+      },
+      "source": [
+        "!gdown --id "
+      ],
+      "execution_count": null,
+      "outputs": [
+        {
+          "output_type": "stream",
+          "name": "stdout",
+          "text": [
+            "/usr/local/lib/python3.7/dist-packages/gdown/cli.py:131: FutureWarning: Option `--id` was deprecated in version 4.3.1 and will be removed in 5.0. You don't need to pass it anymore to use a file ID.\n",
+            "  category=FutureWarning,\n",
+            "Downloading...\n",
+            "From: https://drive.google.com/uc?id=1H-MYFZqngF1R0whm4bc3fEoX7VvOWaDl\n",
+            "To: /content/stylegan2/network-snapshot-metfaces2.pkl\n",
+            "100% 382M/382M [00:10<00:00, 35.7MB/s]\n"
+          ]
+        }
+      ]
+    },
+    {
+      "cell_type": "code",
+      "metadata": {
+        "colab": {
+          "base_uri": "https://localhost:8080/"
+        },
+        "id": "7I4SdWOvE967",
+        "outputId": "9169e660-e665-4a66-e335-1c071da23373"
+      },
+      "source": [
+        "!wget  https://archive.org/download/wikiart-stylegan2-conditional-model/network-snapshot-012052.pkl"
+      ],
+      "execution_count": 5,
+      "outputs": [
+        {
+          "output_type": "stream",
+          "name": "stdout",
+          "text": [
+            "--2022-05-17 00:35:12--  https://archive.org/download/wikiart-stylegan2-conditional-model/network-snapshot-012052.pkl\n",
+            "Resolving archive.org (archive.org)... 207.241.224.2\n",
+            "Connecting to archive.org (archive.org)|207.241.224.2|:443... connected.\n",
+            "HTTP request sent, awaiting response... 302 Found\n",
+            "Location: https://ia802803.us.archive.org/30/items/wikiart-stylegan2-conditional-model/network-snapshot-012052.pkl [following]\n",
+            "--2022-05-17 00:35:12--  https://ia802803.us.archive.org/30/items/wikiart-stylegan2-conditional-model/network-snapshot-012052.pkl\n",
+            "Resolving ia802803.us.archive.org (ia802803.us.archive.org)... 207.241.232.113\n",
+            "Connecting to ia802803.us.archive.org (ia802803.us.archive.org)|207.241.232.113|:443... connected.\n",
+            "HTTP request sent, awaiting response... 200 OK\n",
+            "Length: 384781547 (367M) [application/octet-stream]\n",
+            "Saving to: ‘network-snapshot-012052.pkl’\n",
+            "\n",
+            "network-snapshot-01 100%[===================>] 366.96M   433KB/s    in 11m 54s \n",
+            "\n",
+            "2022-05-17 00:47:06 (526 KB/s) - ‘network-snapshot-012052.pkl’ saved [384781547/384781547]\n",
+            "\n"
+          ]
+        }
+      ]
+    },
+    {
+      "cell_type": "code",
+      "metadata": {
+        "colab": {
+          "base_uri": "https://localhost:8080/"
+        },
+        "id": "l3MhXEAMOMXH",
+        "outputId": "c47fd260-f604-48af-b571-f07ee7a43f42"
+      },
+      "source": [
+        "!python run_generator.py generate-images --network=/content/stylegan2/network-snapshot-012052.pkl --seeds=19700-19777 --truncation-psi=1"
+      ],
+      "execution_count": 7,
+      "outputs": [
+        {
+          "output_type": "stream",
+          "name": "stdout",
+          "text": [
+            "Local submit - run_dir: results/00001-generate-images\n",
+            "dnnlib: Running run_generator.generate_images() on localhost...\n",
+            "Loading networks from \"/content/stylegan2/network-snapshot-012052.pkl\"...\n",
+            "Setting up TensorFlow plugin \"fused_bias_act.cu\": Preprocessing... Loading... Done.\n",
+            "Setting up TensorFlow plugin \"upfirdn_2d.cu\": Preprocessing... Loading... Done.\n",
+            "Generating image for seed 19700 (1/78) ...\n",
+            "Generating image for seed 19701 (2/78) ...\n",
+            "Generating image for seed 19702 (3/78) ...\n",
+            "Generating image for seed 19703 (4/78) ...\n",
+            "Generating image for seed 19704 (5/78) ...\n",
+            "Generating image for seed 19705 (6/78) ...\n",
+            "Generating image for seed 19706 (7/78) ...\n",
+            "Generating image for seed 19707 (8/78) ...\n",
+            "Generating image for seed 19708 (9/78) ...\n",
+            "Generating image for seed 19709 (10/78) ...\n",
+            "Generating image for seed 19710 (11/78) ...\n",
+            "Generating image for seed 19711 (12/78) ...\n",
+            "Generating image for seed 19712 (13/78) ...\n",
+            "Generating image for seed 19713 (14/78) ...\n",
+            "Generating image for seed 19714 (15/78) ...\n",
+            "Generating image for seed 19715 (16/78) ...\n",
+            "Generating image for seed 19716 (17/78) ...\n",
+            "Generating image for seed 19717 (18/78) ...\n",
+            "Generating image for seed 19718 (19/78) ...\n",
+            "Generating image for seed 19719 (20/78) ...\n",
+            "Generating image for seed 19720 (21/78) ...\n",
+            "Generating image for seed 19721 (22/78) ...\n",
+            "Generating image for seed 19722 (23/78) ...\n",
+            "Generating image for seed 19723 (24/78) ...\n",
+            "Generating image for seed 19724 (25/78) ...\n",
+            "Traceback (most recent call last):\n",
+            "  File \"run_generator.py\", line 490, in <module>\n",
+            "    main()\n",
+            "  File \"run_generator.py\", line 485, in main\n",
+            "    dnnlib.submit_run(sc, func_name_map[subcmd], **kwargs)\n",
+            "  File \"/content/stylegan2/dnnlib/submission/submit.py\", line 343, in submit_run\n",
+            "    return farm.submit(submit_config, host_run_dir)\n",
+            "  File \"/content/stylegan2/dnnlib/submission/internal/local.py\", line 22, in submit\n",
+            "    return run_wrapper(submit_config)\n",
+            "  File \"/content/stylegan2/dnnlib/submission/submit.py\", line 280, in run_wrapper\n",
+            "    run_func_obj(**submit_config.run_func_kwargs)\n",
+            "  File \"/content/stylegan2/run_generator.py\", line 135, in generate_images\n",
+            "    images = Gs.run(z, None, **Gs_kwargs) # [minibatch, height, width, channel]\n",
+            "  File \"/content/stylegan2/dnnlib/tflib/network.py\", line 442, in run\n",
+            "    mb_out = tf.get_default_session().run(out_expr, dict(zip(in_expr, mb_in)))\n",
+            "  File \"/tensorflow-1.15.2/python3.7/tensorflow_core/python/client/session.py\", line 956, in run\n",
+            "    run_metadata_ptr)\n",
+            "  File \"/tensorflow-1.15.2/python3.7/tensorflow_core/python/client/session.py\", line 1180, in _run\n",
+            "    feed_dict_tensor, options, run_metadata)\n",
+            "  File \"/tensorflow-1.15.2/python3.7/tensorflow_core/python/client/session.py\", line 1359, in _do_run\n",
+            "    run_metadata)\n",
+            "  File \"/tensorflow-1.15.2/python3.7/tensorflow_core/python/client/session.py\", line 1365, in _do_call\n",
+            "    return fn(*args)\n",
+            "  File \"/tensorflow-1.15.2/python3.7/tensorflow_core/python/client/session.py\", line 1350, in _run_fn\n",
+            "    target_list, run_metadata)\n",
+            "  File \"/tensorflow-1.15.2/python3.7/tensorflow_core/python/client/session.py\", line 1443, in _call_tf_sessionrun\n",
+            "    run_metadata)\n",
+            "KeyboardInterrupt\n"
+          ]
+        }
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {
+        "id": "FMiqkA3IReZB"
+      },
+      "source": [
+        "Let’s zip the generated files and download them."
+      ]
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "!zip -r mundanetoaster2.zip /content/stylegan2/results/00001-generate-images"
+      ],
+      "metadata": {
+        "id": "rvn_skdBd020"
+      },
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {
+        "id": "BTwJjmCrlfAc"
+      },
+      "source": [
+        "#Interpolation\n"
+      ]
+    },
+    {
+      "cell_type": "code",
+      "metadata": {
+        "colab": {
+          "base_uri": "https://localhost:8080/"
+        },
+        "id": "yQ2rYIC4TdaJ",
+        "outputId": "d55c5122-e61e-468d-c043-e89ec00a7a44"
+      },
+      "source": [
+        "!python run_generator.py generate-latent-walk --network=/content/stylegan2/network-snapshot-012052.pkl --seeds=19000,19001,19002,19003,19004,19005,19006,19007 --frames 400 --truncation-psi=0.7"
+      ],
+      "execution_count": 17,
+      "outputs": [
+        {
+          "output_type": "stream",
+          "name": "stdout",
+          "text": [
+            "Local submit - run_dir: results/00007-generate-latent-walk\n",
+            "dnnlib: Running run_generator.generate_latent_walk() on localhost...\n",
+            "Loading networks from \"/content/stylegan2/network-snapshot-012052.pkl\"...\n",
+            "Setting up TensorFlow plugin \"fused_bias_act.cu\": Preprocessing... Loading... Done.\n",
+            "Setting up TensorFlow plugin \"upfirdn_2d.cu\": Preprocessing... Loading... Done.\n",
+            "not enough values to generate walk\n",
+            "Generating image for step 0/406 ...\n",
+            "Generating image for step 1/406 ...\n",
+            "Generating image for step 2/406 ...\n",
+            "Generating image for step 3/406 ...\n",
+            "Generating image for step 4/406 ...\n",
+            "Generating image for step 5/406 ...\n",
+            "Generating image for step 6/406 ...\n",
+            "Generating image for step 7/406 ...\n",
+            "Generating image for step 8/406 ...\n",
+            "Generating image for step 9/406 ...\n",
+            "Generating image for step 10/406 ...\n",
+            "Generating image for step 11/406 ...\n",
+            "Generating image for step 12/406 ...\n",
+            "Generating image for step 13/406 ...\n",
+            "Generating image for step 14/406 ...\n",
+            "Generating image for step 15/406 ...\n",
+            "Generating image for step 16/406 ...\n",
+            "Generating image for step 17/406 ...\n",
+            "Generating image for step 18/406 ...\n",
+            "Generating image for step 19/406 ...\n",
+            "Generating image for step 20/406 ...\n",
+            "Generating image for step 21/406 ...\n",
+            "Generating image for step 22/406 ...\n",
+            "Generating image for step 23/406 ...\n",
+            "Generating image for step 24/406 ...\n",
+            "Generating image for step 25/406 ...\n",
+            "Generating image for step 26/406 ...\n",
+            "Generating image for step 27/406 ...\n",
+            "Generating image for step 28/406 ...\n",
+            "Generating image for step 29/406 ...\n",
+            "Generating image for step 30/406 ...\n",
+            "Generating image for step 31/406 ...\n",
+            "Generating image for step 32/406 ...\n",
+            "Generating image for step 33/406 ...\n",
+            "Generating image for step 34/406 ...\n",
+            "Generating image for step 35/406 ...\n",
+            "Generating image for step 36/406 ...\n",
+            "Generating image for step 37/406 ...\n",
+            "Generating image for step 38/406 ...\n",
+            "Generating image for step 39/406 ...\n",
+            "Generating image for step 40/406 ...\n",
+            "Generating image for step 41/406 ...\n",
+            "Generating image for step 42/406 ...\n",
+            "Generating image for step 43/406 ...\n",
+            "Generating image for step 44/406 ...\n",
+            "Generating image for step 45/406 ...\n",
+            "Generating image for step 46/406 ...\n",
+            "Generating image for step 47/406 ...\n",
+            "Generating image for step 48/406 ...\n",
+            "Generating image for step 49/406 ...\n",
+            "Generating image for step 50/406 ...\n",
+            "Generating image for step 51/406 ...\n",
+            "Generating image for step 52/406 ...\n",
+            "Generating image for step 53/406 ...\n",
+            "Generating image for step 54/406 ...\n",
+            "Generating image for step 55/406 ...\n",
+            "Generating image for step 56/406 ...\n",
+            "Generating image for step 57/406 ...\n",
+            "Generating image for step 58/406 ...\n",
+            "Generating image for step 59/406 ...\n",
+            "Generating image for step 60/406 ...\n",
+            "Generating image for step 61/406 ...\n",
+            "Generating image for step 62/406 ...\n",
+            "Generating image for step 63/406 ...\n",
+            "Generating image for step 64/406 ...\n",
+            "Generating image for step 65/406 ...\n",
+            "Generating image for step 66/406 ...\n",
+            "Generating image for step 67/406 ...\n",
+            "Generating image for step 68/406 ...\n",
+            "Generating image for step 69/406 ...\n",
+            "Generating image for step 70/406 ...\n",
+            "Generating image for step 71/406 ...\n",
+            "Generating image for step 72/406 ...\n",
+            "Generating image for step 73/406 ...\n",
+            "Generating image for step 74/406 ...\n",
+            "Generating image for step 75/406 ...\n",
+            "Generating image for step 76/406 ...\n",
+            "Generating image for step 77/406 ...\n",
+            "Generating image for step 78/406 ...\n",
+            "Generating image for step 79/406 ...\n",
+            "Generating image for step 80/406 ...\n",
+            "Generating image for step 81/406 ...\n",
+            "Generating image for step 82/406 ...\n",
+            "Generating image for step 83/406 ...\n",
+            "Generating image for step 84/406 ...\n",
+            "Generating image for step 85/406 ...\n",
+            "Generating image for step 86/406 ...\n",
+            "Generating image for step 87/406 ...\n",
+            "Generating image for step 88/406 ...\n",
+            "Generating image for step 89/406 ...\n",
+            "Generating image for step 90/406 ...\n",
+            "Generating image for step 91/406 ...\n",
+            "Generating image for step 92/406 ...\n",
+            "Generating image for step 93/406 ...\n",
+            "Generating image for step 94/406 ...\n",
+            "Generating image for step 95/406 ...\n",
+            "Generating image for step 96/406 ...\n",
+            "Generating image for step 97/406 ...\n",
+            "Generating image for step 98/406 ...\n",
+            "Generating image for step 99/406 ...\n",
+            "Generating image for step 100/406 ...\n",
+            "Generating image for step 101/406 ...\n",
+            "Generating image for step 102/406 ...\n",
+            "Generating image for step 103/406 ...\n",
+            "Generating image for step 104/406 ...\n",
+            "Generating image for step 105/406 ...\n",
+            "Generating image for step 106/406 ...\n",
+            "Generating image for step 107/406 ...\n",
+            "Generating image for step 108/406 ...\n",
+            "Generating image for step 109/406 ...\n",
+            "Generating image for step 110/406 ...\n",
+            "Generating image for step 111/406 ...\n",
+            "Generating image for step 112/406 ...\n",
+            "Generating image for step 113/406 ...\n",
+            "Generating image for step 114/406 ...\n",
+            "Generating image for step 115/406 ...\n",
+            "Generating image for step 116/406 ...\n",
+            "Generating image for step 117/406 ...\n",
+            "Generating image for step 118/406 ...\n",
+            "Generating image for step 119/406 ...\n",
+            "Generating image for step 120/406 ...\n",
+            "Generating image for step 121/406 ...\n",
+            "Generating image for step 122/406 ...\n",
+            "Generating image for step 123/406 ...\n",
+            "Generating image for step 124/406 ...\n",
+            "Generating image for step 125/406 ...\n",
+            "Generating image for step 126/406 ...\n",
+            "Generating image for step 127/406 ...\n",
+            "Generating image for step 128/406 ...\n",
+            "Generating image for step 129/406 ...\n",
+            "Generating image for step 130/406 ...\n",
+            "Generating image for step 131/406 ...\n",
+            "Generating image for step 132/406 ...\n",
+            "Generating image for step 133/406 ...\n",
+            "Generating image for step 134/406 ...\n",
+            "Generating image for step 135/406 ...\n",
+            "Generating image for step 136/406 ...\n",
+            "Generating image for step 137/406 ...\n",
+            "Generating image for step 138/406 ...\n",
+            "Generating image for step 139/406 ...\n",
+            "Generating image for step 140/406 ...\n",
+            "Generating image for step 141/406 ...\n",
+            "Generating image for step 142/406 ...\n",
+            "Generating image for step 143/406 ...\n",
+            "Generating image for step 144/406 ...\n",
+            "Generating image for step 145/406 ...\n",
+            "Generating image for step 146/406 ...\n",
+            "Generating image for step 147/406 ...\n",
+            "Generating image for step 148/406 ...\n",
+            "Generating image for step 149/406 ...\n",
+            "Generating image for step 150/406 ...\n",
+            "Generating image for step 151/406 ...\n",
+            "Generating image for step 152/406 ...\n",
+            "Generating image for step 153/406 ...\n",
+            "Generating image for step 154/406 ...\n",
+            "Generating image for step 155/406 ...\n",
+            "Generating image for step 156/406 ...\n",
+            "Generating image for step 157/406 ...\n",
+            "Generating image for step 158/406 ...\n",
+            "Generating image for step 159/406 ...\n",
+            "Generating image for step 160/406 ...\n",
+            "Generating image for step 161/406 ...\n",
+            "Generating image for step 162/406 ...\n",
+            "Generating image for step 163/406 ...\n",
+            "Generating image for step 164/406 ...\n",
+            "Generating image for step 165/406 ...\n",
+            "Generating image for step 166/406 ...\n",
+            "Generating image for step 167/406 ...\n",
+            "Generating image for step 168/406 ...\n",
+            "Generating image for step 169/406 ...\n",
+            "Generating image for step 170/406 ...\n",
+            "Generating image for step 171/406 ...\n",
+            "Generating image for step 172/406 ...\n",
+            "Generating image for step 173/406 ...\n",
+            "Generating image for step 174/406 ...\n",
+            "Generating image for step 175/406 ...\n",
+            "Generating image for step 176/406 ...\n",
+            "Generating image for step 177/406 ...\n",
+            "Generating image for step 178/406 ...\n",
+            "Generating image for step 179/406 ...\n",
+            "Generating image for step 180/406 ...\n",
+            "Generating image for step 181/406 ...\n",
+            "Generating image for step 182/406 ...\n",
+            "Generating image for step 183/406 ...\n",
+            "Generating image for step 184/406 ...\n",
+            "Generating image for step 185/406 ...\n",
+            "Generating image for step 186/406 ...\n",
+            "Generating image for step 187/406 ...\n",
+            "Generating image for step 188/406 ...\n",
+            "Generating image for step 189/406 ...\n",
+            "Generating image for step 190/406 ...\n",
+            "Generating image for step 191/406 ...\n",
+            "Generating image for step 192/406 ...\n",
+            "Generating image for step 193/406 ...\n",
+            "Generating image for step 194/406 ...\n",
+            "Generating image for step 195/406 ...\n",
+            "Generating image for step 196/406 ...\n",
+            "Generating image for step 197/406 ...\n",
+            "Generating image for step 198/406 ...\n",
+            "Generating image for step 199/406 ...\n",
+            "Generating image for step 200/406 ...\n",
+            "Generating image for step 201/406 ...\n",
+            "Generating image for step 202/406 ...\n",
+            "Generating image for step 203/406 ...\n",
+            "Generating image for step 204/406 ...\n",
+            "Generating image for step 205/406 ...\n",
+            "Generating image for step 206/406 ...\n",
+            "Generating image for step 207/406 ...\n",
+            "Generating image for step 208/406 ...\n",
+            "Generating image for step 209/406 ...\n",
+            "Generating image for step 210/406 ...\n",
+            "Generating image for step 211/406 ...\n",
+            "Generating image for step 212/406 ...\n",
+            "Generating image for step 213/406 ...\n",
+            "Generating image for step 214/406 ...\n",
+            "Generating image for step 215/406 ...\n",
+            "Generating image for step 216/406 ...\n",
+            "Generating image for step 217/406 ...\n",
+            "Generating image for step 218/406 ...\n",
+            "Generating image for step 219/406 ...\n",
+            "Generating image for step 220/406 ...\n",
+            "Generating image for step 221/406 ...\n",
+            "Generating image for step 222/406 ...\n",
+            "Generating image for step 223/406 ...\n",
+            "Generating image for step 224/406 ...\n",
+            "Generating image for step 225/406 ...\n",
+            "Generating image for step 226/406 ...\n",
+            "Generating image for step 227/406 ...\n",
+            "Generating image for step 228/406 ...\n",
+            "Generating image for step 229/406 ...\n",
+            "Generating image for step 230/406 ...\n",
+            "Generating image for step 231/406 ...\n",
+            "Generating image for step 232/406 ...\n",
+            "Generating image for step 233/406 ...\n",
+            "Generating image for step 234/406 ...\n",
+            "Generating image for step 235/406 ...\n",
+            "Generating image for step 236/406 ...\n",
+            "Generating image for step 237/406 ...\n",
+            "Generating image for step 238/406 ...\n",
+            "Generating image for step 239/406 ...\n",
+            "Generating image for step 240/406 ...\n",
+            "Generating image for step 241/406 ...\n",
+            "Generating image for step 242/406 ...\n",
+            "Generating image for step 243/406 ...\n",
+            "Generating image for step 244/406 ...\n",
+            "Generating image for step 245/406 ...\n",
+            "Generating image for step 246/406 ...\n",
+            "Generating image for step 247/406 ...\n",
+            "Generating image for step 248/406 ...\n",
+            "Generating image for step 249/406 ...\n",
+            "Generating image for step 250/406 ...\n",
+            "Generating image for step 251/406 ...\n",
+            "Generating image for step 252/406 ...\n",
+            "Generating image for step 253/406 ...\n",
+            "Generating image for step 254/406 ...\n",
+            "Generating image for step 255/406 ...\n",
+            "Generating image for step 256/406 ...\n",
+            "Generating image for step 257/406 ...\n",
+            "Generating image for step 258/406 ...\n",
+            "Generating image for step 259/406 ...\n",
+            "Generating image for step 260/406 ...\n",
+            "Generating image for step 261/406 ...\n",
+            "Generating image for step 262/406 ...\n",
+            "Generating image for step 263/406 ...\n",
+            "Generating image for step 264/406 ...\n",
+            "Generating image for step 265/406 ...\n",
+            "Generating image for step 266/406 ...\n",
+            "Generating image for step 267/406 ...\n",
+            "Generating image for step 268/406 ...\n",
+            "Generating image for step 269/406 ...\n",
+            "Generating image for step 270/406 ...\n",
+            "Generating image for step 271/406 ...\n",
+            "Generating image for step 272/406 ...\n",
+            "Generating image for step 273/406 ...\n",
+            "Generating image for step 274/406 ...\n",
+            "Generating image for step 275/406 ...\n",
+            "Generating image for step 276/406 ...\n",
+            "Generating image for step 277/406 ...\n",
+            "Generating image for step 278/406 ...\n",
+            "Generating image for step 279/406 ...\n",
+            "Generating image for step 280/406 ...\n",
+            "Generating image for step 281/406 ...\n",
+            "Generating image for step 282/406 ...\n",
+            "Generating image for step 283/406 ...\n",
+            "Generating image for step 284/406 ...\n",
+            "Generating image for step 285/406 ...\n",
+            "Generating image for step 286/406 ...\n",
+            "Generating image for step 287/406 ...\n",
+            "Generating image for step 288/406 ...\n",
+            "Generating image for step 289/406 ...\n",
+            "Generating image for step 290/406 ...\n",
+            "Generating image for step 291/406 ...\n",
+            "Generating image for step 292/406 ...\n",
+            "Generating image for step 293/406 ...\n",
+            "Generating image for step 294/406 ...\n",
+            "Generating image for step 295/406 ...\n",
+            "Generating image for step 296/406 ...\n",
+            "Generating image for step 297/406 ...\n",
+            "Generating image for step 298/406 ...\n",
+            "Generating image for step 299/406 ...\n",
+            "Generating image for step 300/406 ...\n",
+            "Generating image for step 301/406 ...\n",
+            "Generating image for step 302/406 ...\n",
+            "Generating image for step 303/406 ...\n",
+            "Generating image for step 304/406 ...\n",
+            "Generating image for step 305/406 ...\n",
+            "Generating image for step 306/406 ...\n",
+            "Generating image for step 307/406 ...\n",
+            "Generating image for step 308/406 ...\n",
+            "Generating image for step 309/406 ...\n",
+            "Generating image for step 310/406 ...\n",
+            "Generating image for step 311/406 ...\n",
+            "Generating image for step 312/406 ...\n",
+            "Generating image for step 313/406 ...\n",
+            "Generating image for step 314/406 ...\n",
+            "Generating image for step 315/406 ...\n",
+            "Generating image for step 316/406 ...\n",
+            "Generating image for step 317/406 ...\n",
+            "Generating image for step 318/406 ...\n",
+            "Generating image for step 319/406 ...\n",
+            "Generating image for step 320/406 ...\n",
+            "Generating image for step 321/406 ...\n",
+            "Generating image for step 322/406 ...\n",
+            "Generating image for step 323/406 ...\n",
+            "Generating image for step 324/406 ...\n",
+            "Generating image for step 325/406 ...\n",
+            "Generating image for step 326/406 ...\n",
+            "Generating image for step 327/406 ...\n",
+            "Generating image for step 328/406 ...\n",
+            "Generating image for step 329/406 ...\n",
+            "Generating image for step 330/406 ...\n",
+            "Generating image for step 331/406 ...\n",
+            "Generating image for step 332/406 ...\n",
+            "Generating image for step 333/406 ...\n",
+            "Generating image for step 334/406 ...\n",
+            "Generating image for step 335/406 ...\n",
+            "Generating image for step 336/406 ...\n",
+            "Generating image for step 337/406 ...\n",
+            "Generating image for step 338/406 ...\n",
+            "Generating image for step 339/406 ...\n",
+            "Generating image for step 340/406 ...\n",
+            "Generating image for step 341/406 ...\n",
+            "Generating image for step 342/406 ...\n",
+            "Generating image for step 343/406 ...\n",
+            "Generating image for step 344/406 ...\n",
+            "Generating image for step 345/406 ...\n",
+            "Generating image for step 346/406 ...\n",
+            "Generating image for step 347/406 ...\n",
+            "Generating image for step 348/406 ...\n",
+            "Generating image for step 349/406 ...\n",
+            "Generating image for step 350/406 ...\n",
+            "Generating image for step 351/406 ...\n",
+            "Generating image for step 352/406 ...\n",
+            "Generating image for step 353/406 ...\n",
+            "Generating image for step 354/406 ...\n",
+            "Generating image for step 355/406 ...\n",
+            "Generating image for step 356/406 ...\n",
+            "Generating image for step 357/406 ...\n",
+            "Generating image for step 358/406 ...\n",
+            "Generating image for step 359/406 ...\n",
+            "Generating image for step 360/406 ...\n",
+            "Generating image for step 361/406 ...\n",
+            "Generating image for step 362/406 ...\n",
+            "Generating image for step 363/406 ...\n",
+            "Generating image for step 364/406 ...\n",
+            "Generating image for step 365/406 ...\n",
+            "Generating image for step 366/406 ...\n",
+            "Generating image for step 367/406 ...\n",
+            "Generating image for step 368/406 ...\n",
+            "Generating image for step 369/406 ...\n",
+            "Generating image for step 370/406 ...\n",
+            "Generating image for step 371/406 ...\n",
+            "Generating image for step 372/406 ...\n",
+            "Generating image for step 373/406 ...\n",
+            "Generating image for step 374/406 ...\n",
+            "Generating image for step 375/406 ...\n",
+            "Generating image for step 376/406 ...\n",
+            "Generating image for step 377/406 ...\n",
+            "Generating image for step 378/406 ...\n",
+            "Generating image for step 379/406 ...\n",
+            "Generating image for step 380/406 ...\n",
+            "Generating image for step 381/406 ...\n",
+            "Generating image for step 382/406 ...\n",
+            "Generating image for step 383/406 ...\n",
+            "Generating image for step 384/406 ...\n",
+            "Generating image for step 385/406 ...\n",
+            "Generating image for step 386/406 ...\n",
+            "Generating image for step 387/406 ...\n",
+            "Generating image for step 388/406 ...\n",
+            "Generating image for step 389/406 ...\n",
+            "Generating image for step 390/406 ...\n",
+            "Generating image for step 391/406 ...\n",
+            "Generating image for step 392/406 ...\n",
+            "Generating image for step 393/406 ...\n",
+            "Generating image for step 394/406 ...\n",
+            "Generating image for step 395/406 ...\n",
+            "Generating image for step 396/406 ...\n",
+            "Generating image for step 397/406 ...\n",
+            "Generating image for step 398/406 ...\n",
+            "Generating image for step 399/406 ...\n",
+            "Generating image for step 400/406 ...\n",
+            "Generating image for step 401/406 ...\n",
+            "Generating image for step 402/406 ...\n",
+            "Generating image for step 403/406 ...\n",
+            "Generating image for step 404/406 ...\n",
+            "Generating image for step 405/406 ...\n",
+            "dnnlib: Finished run_generator.generate_latent_walk() in 4m 56s.\n"
+          ]
+        }
+      ]
+    },
+    {
+      "cell_type": "code",
+      "metadata": {
+        "id": "dceBSxTsmW1H"
+      },
+      "source": [
+        "#convert to video \n",
+        "!ffmpeg -r 30 -i ./results/00007-generate-latent-walk/%*.png  -vcodec libx264 -pix_fmt yuv420p output5.mp4"
+      ],
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "code",
+      "metadata": {
+        "id": "u7A7jRRGmzhU"
+      },
+      "source": [
+        ""
+      ],
+      "execution_count": null,
+      "outputs": []
+    }
+  ]
+}
